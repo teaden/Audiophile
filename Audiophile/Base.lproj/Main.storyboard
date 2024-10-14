@@ -8,7 +8,7 @@
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
-        <!--Root View Controller-->
+        <!--Choose Audio Module-->
         <scene sceneID="KLM-DA-DP5">
             <objects>
                 <tableViewController id="Zyb-W6-4SR" sceneMemberID="viewController">
@@ -17,7 +17,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <sections>
-                            <tableViewSection headerTitle="Section-1" id="I8n-Et-V9p">
+                            <tableViewSection headerTitle="Audio Functionality" id="I8n-Et-V9p">
                                 <cells>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="default" indentationWidth="10" textLabel="j58-xE-rqn" style="IBUITableViewCellStyleDefault" id="k7I-Qe-3Zc">
                                         <rect key="frame" x="0.0" y="50" width="393" height="43.666667938232422"/>
@@ -67,7 +67,7 @@
                             <outlet property="delegate" destination="Zyb-W6-4SR" id="JLP-sx-vW3"/>
                         </connections>
                     </tableView>
-                    <navigationItem key="navigationItem" title="Root View Controller" id="zom-ad-194"/>
+                    <navigationItem key="navigationItem" title="Choose Audio Module" id="zom-ad-194"/>
                 </tableViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="dDa-DI-hrT" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
@@ -97,16 +97,18 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Frequency 1: Noise" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="HRS-1r-zk7">
-                                <rect key="frame" x="16" y="340" width="361" height="29"/>
-                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Frequency 2: Noise" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="pGt-Hn-29g">
+                                <rect key="frame" x="16" y="411.66666666666669" width="361" height="29"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="29" id="gcc-U1-Nqx"/>
+                                    <constraint firstAttribute="width" constant="361" id="uy6-9v-LPn"/>
+                                </constraints>
                                 <fontDescription key="fontDescription" type="system" pointSize="24"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Frequency 2: Noise" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="pGt-Hn-29g">
-                                <rect key="frame" x="16" y="412" width="361" height="29"/>
-                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Frequency 1: Noise" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="HRS-1r-zk7">
+                                <rect key="frame" x="16" y="342" width="361" height="29"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="24"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
@@ -114,6 +116,13 @@
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <constraints>
+                            <constraint firstItem="pGt-Hn-29g" firstAttribute="trailing" secondItem="HRS-1r-zk7" secondAttribute="trailing" id="7eF-rv-Qs5"/>
+                            <constraint firstItem="pGt-Hn-29g" firstAttribute="leading" secondItem="8bC-Xf-vdC" secondAttribute="leadingMargin" id="m2d-Ts-zMC"/>
+                            <constraint firstItem="pGt-Hn-29g" firstAttribute="top" secondItem="HRS-1r-zk7" secondAttribute="bottom" constant="41" id="nxM-lg-hed"/>
+                            <constraint firstItem="pGt-Hn-29g" firstAttribute="leading" secondItem="HRS-1r-zk7" secondAttribute="leading" id="r8T-BW-IEG"/>
+                            <constraint firstItem="pGt-Hn-29g" firstAttribute="centerY" secondItem="8bC-Xf-vdC" secondAttribute="centerY" id="tOD-ox-yVL"/>
+                        </constraints>
                     </view>
                     <navigationItem key="navigationItem" id="L2k-iM-UNM"/>
                     <connections>
@@ -145,19 +154,22 @@
                                     <action selector="changeFrequency:" destination="FDf-b8-67c" eventType="valueChanged" id="R80-lI-PZ6"/>
                                 </connections>
                             </slider>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Frequency: 18000 Hz" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="8GL-cw-YwW">
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Frequency: 18000 Hz" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="8GL-cw-YwW">
                                 <rect key="frame" x="16" y="491" width="361" height="21"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <slider opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.5" minValue="0.0" maxValue="1" translatesAutoresizingMaskIntoConstraints="NO" id="4xw-vg-ZAt">
+                            <slider opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.29999999999999999" minValue="0.0" maxValue="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="4xw-vg-ZAt">
                                 <rect key="frame" x="14" y="635" width="365" height="30"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <connections>
+                                    <action selector="changeVolume:" destination="FDf-b8-67c" eventType="valueChanged" id="HiA-CC-Boc"/>
+                                </connections>
                             </slider>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Volume: 0.5" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="JYh-wZ-ScY">
-                                <rect key="frame" x="125" y="606" width="116" height="21"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Volume: 0.3" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="JYh-wZ-ScY">
+                                <rect key="frame" x="16" y="606" width="361" height="21"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                 <nil key="textColor"/>
@@ -171,6 +183,7 @@
                     <connections>
                         <outlet property="freqLabel" destination="8GL-cw-YwW" id="OFU-Ac-EqC"/>
                         <outlet property="userView" destination="7kl-uW-8vj" id="D3f-hx-tut"/>
+                        <outlet property="volLabel" destination="JYh-wZ-ScY" id="SA4-io-F5G"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="uSV-FT-2XA" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>

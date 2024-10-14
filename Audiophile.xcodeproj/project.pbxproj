@@ -148,11 +148,11 @@
 				DEVELOPMENT_TEAM = Z9YM2ZV8HR;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Audiophile/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Audiophile requires microphone access.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.7;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -178,11 +178,11 @@
 				DEVELOPMENT_TEAM = Z9YM2ZV8HR;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Audiophile/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Audiophile requires microphone access.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.7;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

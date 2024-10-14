@@ -17,7 +17,7 @@ class AudioModel {
     
     var timeSamples: [Float]
     var fftSamples: [Float]
-    var volume: Float = 0.1 // user setable volume
+    var volumeModuleB: Float = 0.3 // user setable volume
     
     var frequencyModuleB: Float = 0.0 { // frequency in Hz (changeable by user)
         didSet{
@@ -81,15 +81,30 @@ class AudioModel {
     }
     
     // public function for starting processing of microphone data
-    func startMicrophoneProcessing(withFps: Double) {
+    func startMicrophoneProcessingModuleA(withFps: Double) {
         // setup the microphone to copy to circualr buffer
         if let manager = self.audioManager {
             manager.inputBlock = self.handleMicrophone
             
             // Repeat this fps times per second using the timer class
-            // Every time this is called, we update the arrays "timeData" and "fftData"
+            // Every time this is called, we update the arrays "timeSamples" and "fftSamples"
             Timer.scheduledTimer(withTimeInterval: 1.0 / withFps, repeats: true) { _ in
-                self.runEveryInterval()
+                self.runEveryIntervalModuleA()
+            }
+        }
+    }
+    
+    // public function for starting processing of audio input and output
+    func startAudioIoProcessingModuleB(withFps:Double){
+        // setup the microphone to copy to circualr buffer
+        if let manager = self.audioManager {
+            manager.inputBlock = self.handleMicrophone
+            manager.outputBlock = self.handleSpeakerQueryWithSinusoid
+            
+            // repeat this fps times per second using the timer class
+            //   every time this is called, we update the arrays "timeSamples" and "fftSamples"
+            Timer.scheduledTimer(withTimeInterval: 1.0/withFps, repeats: true) { _ in
+                self.runEveryIntervalModuleB()
             }
         }
     }
@@ -122,11 +137,11 @@ class AudioModel {
                     }
                 }
                 // adjust volume of audio file output
-                vDSP_vsmul(arrayData, 1, &(self.volume), arrayData, 1, vDSP_Length(numFrames*numChannels))
+                vDSP_vsmul(arrayData, 1, &(self.volumeModuleB), arrayData, 1, vDSP_Length(numFrames*numChannels))
             }
         }
     
-    private func runEveryInterval(){
+    private func runEveryIntervalModuleA(){
         if self.inputBuffer != nil {
             // copy time data to swift array
             self.inputBuffer!.fetchFreshData(&self.timeSamples, // copied into this array
@@ -150,6 +165,18 @@ class AudioModel {
             if peakFreqs[1].magnitude > 0 {
                 self.twoLargestFreqs[1] = peakFreqs[1]
             }
+        }
+    }
+    
+    private func runEveryIntervalModuleB(){
+        if self.inputBuffer != nil {
+            // copy time data to swift array
+            self.inputBuffer!.fetchFreshData(&self.timeSamples, // copied into this array
+                                             withNumSamples: Int64(self.AUDIO_SAMPLE_BUFFER_SIZE))
+            
+            // now take FFT
+            self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
+                                         andCopydBMagnitudeToBuffer: &self.fftSamples) // fft result is copied into fftData array
         }
     }
     

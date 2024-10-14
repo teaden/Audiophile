@@ -27,7 +27,8 @@ class ModuleAViewController: UIViewController {
         super.viewWillAppear(animated)
         
         // start up the audio model here, querying microphone
-        audio.startMicrophoneProcessing(withFps: 20) // preferred number of FFT calculations per second
+        // withFps: preferred number of FFT calculations per second
+        audio.startMicrophoneProcessingModuleA(withFps: 20)
         audio.play()
         
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in

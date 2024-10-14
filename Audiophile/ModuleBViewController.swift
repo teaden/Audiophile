@@ -11,6 +11,7 @@ class ModuleBViewController: UIViewController {
     
     @IBOutlet weak var userView: UIView!
     @IBOutlet weak var freqLabel: UILabel!
+    @IBOutlet weak var volLabel: UILabel!
     
     // setup audio model
     let audio = AudioModel(buffer_size: AudioConstants.AUDIO_BUFFER_SIZE)
@@ -27,6 +28,11 @@ class ModuleBViewController: UIViewController {
         sender.setValue(round(sender.value / freqStep) * freqStep, animated: false)
         self.audio.frequencyModuleB = sender.value
         freqLabel.text = "Frequency: \(sender.value)"
+    }
+    
+    @IBAction func changeVolume(_ sender: UISlider) {
+        self.audio.volumeModuleB = sender.value
+        volLabel.text = "Volume: \(sender.value)"
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -46,7 +52,7 @@ class ModuleBViewController: UIViewController {
         }
         
         // start up the audio model here, querying microphone
-        audio.startMicrophoneProcessing(withFps: 20) // preferred number of FFT calculations per second
+        audio.startAudioIoProcessingModuleB(withFps: 20) // preferred number of FFT calculations per second
 
         audio.play()
         
@@ -79,19 +85,19 @@ class ModuleBViewController: UIViewController {
             
             graph.updateGraph(
                 data: self.audio.fftSamples,
-                forKey: "fft"
+                forKey: "fftZoomed"
             )
             
             // BONUS: show the zoomed FFT
             // we can start at about 150Hz and show the next 300 points
             // actual Hz = f_0 * N/F_s
-            let minfreq = min(min(frequency1,frequency2),frequency3)
-            let startIdx:Int = (Int(minfreq)-50) * AudioConstants.AUDIO_BUFFER_SIZE/audio.samplingRate
-            let subArray:[Float] = Array(self.audio.fftData[startIdx...startIdx+300])
-            graph.updateGraph(
-                data: subArray,
-                forKey: "fftZoomed"
-            )
+//            let minfreq = min(min(frequency1,frequency2),frequency3)
+//            let startIdx:Int = (Int(minfreq)-50) * AudioConstants.AUDIO_BUFFER_SIZE/audio.samplingRate
+//            let subArray:[Float] = Array(self.audio.fftData[startIdx...startIdx+300])
+//            graph.updateGraph(
+//                data: subArray,
+//                forKey: "fftZoomed"
+//            )
             
             
         }
