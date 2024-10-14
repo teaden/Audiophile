@@ -17,7 +17,7 @@ class AudioModel {
     
     var timeSamples: [Float]
     var fftSamples: [Float]
-    var volumeModuleB: Float = 0.3 // user setable volume
+    var volumeModuleB: Float = 0.5 // user setable volume
     
     var frequencyModuleB: Float = 0.0 { // frequency in Hz (changeable by user)
         didSet{
@@ -95,7 +95,9 @@ class AudioModel {
     }
     
     // public function for starting processing of audio input and output
-    func startAudioIoProcessingModuleB(withFps:Double){
+    func startAudioIoProcessingModuleB(withFps:Double, withSineFreq: Float) {
+        frequencyModuleB = withSineFreq
+        
         // setup the microphone to copy to circualr buffer
         if let manager = self.audioManager {
             manager.inputBlock = self.handleMicrophone
@@ -126,7 +128,7 @@ class AudioModel {
                         if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
                         i+=1
                     }
-                }else if chan==2{
+                } else if chan==2{
                     let len = frame*chan
                     while i<len{
                         arrayData[i] = sin(phaseModuleB)

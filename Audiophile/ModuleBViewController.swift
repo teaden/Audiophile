@@ -52,7 +52,7 @@ class ModuleBViewController: UIViewController {
         }
         
         // start up the audio model here, querying microphone
-        audio.startAudioIoProcessingModuleB(withFps: 20) // preferred number of FFT calculations per second
+        audio.startAudioIoProcessingModuleB(withFps: 20, withSineFreq: 18000) // preferred number of FFT calculations per second
 
         audio.play()
         
