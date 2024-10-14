@@ -14,7 +14,30 @@ struct FrequencyMagnitude {
 }
 
 class AudioModel {
+    
+    var timeSamples: [Float]
+    var fftSamples: [Float]
+    var volume: Float = 0.1 // user setable volume
+    
+    var frequencyModuleB: Float = 0.0 { // frequency in Hz (changeable by user)
+        didSet{
+            if let manager = self.audioManager {
+                // if using swift for generating the sine wave: when changed, we need to update our increment
+                phaseIncrementModuleB = Float(2*Double.pi*Double(frequencyModuleB) / manager.samplingRate)
+            }
+        }
+    }
+    
+    lazy var twoLargestFreqs: [FrequencyMagnitude] = [
+        FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity),
+        FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity)
+    ]
+    
     private var AUDIO_SAMPLE_BUFFER_SIZE: Int
+    
+    private var phaseModuleB: Float = 0.0
+    private var phaseIncrementModuleB: Float = 0.0
+    private var sineWaveRepeatMax:Float = Float(2*Double.pi)
     
     private lazy var audioManager: Novocaine? = {
         return Novocaine.audioManager()
@@ -29,15 +52,7 @@ class AudioModel {
         return CircularBuffer.init(numChannels: Int64(self.audioManager!.numInputChannels),
                                    andBufferSize: Int64(AUDIO_SAMPLE_BUFFER_SIZE))
     }()
-    
-    var timeSamples: [Float]
-    var fftSamples: [Float]
-    
-    lazy var twoLargestFreqs: [FrequencyMagnitude] = [
-        FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity),
-        FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity)
-    ]
-        
+            
     init(buffer_size: Int) {
         self.AUDIO_SAMPLE_BUFFER_SIZE = buffer_size
         timeSamples = Array.init(repeating: 0.0, count: self.AUDIO_SAMPLE_BUFFER_SIZE)
@@ -65,8 +80,6 @@ class AudioModel {
         fftHelper = nil
     }
     
-
-    
     // public function for starting processing of microphone data
     func startMicrophoneProcessing(withFps: Double) {
         // setup the microphone to copy to circualr buffer
@@ -85,6 +98,33 @@ class AudioModel {
         // copy samples from the microphone into circular buffer
         self.inputBuffer?.addNewFloatData(data, withNumSamples: Int64(numFrames))
     }
+    
+    private func handleSpeakerQueryWithSinusoid(data:Optional<UnsafeMutablePointer<Float>>, numFrames:UInt32, numChannels: UInt32) {
+            if let arrayData = data{
+                var i = 0
+                let chan = Int(numChannels)
+                let frame = Int(numFrames)
+                if chan==1{
+                    while i<frame{
+                        arrayData[i] = sin(phaseModuleB)
+                        phaseModuleB += phaseIncrementModuleB
+                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
+                        i+=1
+                    }
+                }else if chan==2{
+                    let len = frame*chan
+                    while i<len{
+                        arrayData[i] = sin(phaseModuleB)
+                        arrayData[i+1] = arrayData[i]
+                        phaseModuleB += phaseIncrementModuleB
+                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
+                        i+=2
+                    }
+                }
+                // adjust volume of audio file output
+                vDSP_vsmul(arrayData, 1, &(self.volume), arrayData, 1, vDSP_Length(numFrames*numChannels))
+            }
+        }
     
     private func runEveryInterval(){
         if self.inputBuffer != nil {

@@ -10,6 +10,7 @@ import UIKit
 class ModuleBViewController: UIViewController {
     
     @IBOutlet weak var userView: UIView!
+    @IBOutlet weak var freqLabel: UILabel!
     
     // setup audio model
     let audio = AudioModel(buffer_size: AudioConstants.AUDIO_BUFFER_SIZE)
@@ -18,81 +19,79 @@ class ModuleBViewController: UIViewController {
         return MetalGraph(userView: self.userView)
     }()
     
-
-    // Part One: Table It #2 (1 pts) - Pause when navigating away from and play when navigating to Viewcontroller
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        audio.togglePlaying()
+    var timer: Timer? = nil
+    
+    private let freqStep: Float = 50
+    
+    @IBAction func changeFrequency(_ sender: UISlider) {
+        sender.setValue(round(sender.value / freqStep) * freqStep, animated: false)
+        self.audio.frequencyModuleB = sender.value
+        freqLabel.text = "Frequency: \(sender.value)"
     }
     
-    override func viewDidLoad() {
-        super.viewDidLoad()
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
         
         if let graph = self.graph{
             graph.setBackgroundColor(r: 0, g: 0, b: 0, a: 1)
             
-            // add in graphs for display
-            // note that we need to normalize the scale of this graph
-            // because the fft is returned in dB which has very large negative values and some large positive values
-            
-            
-            graph.addGraph(withName: "fft",
-                            shouldNormalizeForFFT: true,
-                            numPointsInGraph: AudioConstants.AUDIO_BUFFER_SIZE/2)
-            
-            // Part Two: Equalize It #1 (0.25 pts) - Add another graph to the view that is 20 points long
-            graph.addGraph(withName: "equalize_fft",
-                            shouldNormalizeForFFT: true,
-                            numPointsInGraph: 20)
-            
             graph.addGraph(withName: "time",
                 numPointsInGraph: AudioConstants.AUDIO_BUFFER_SIZE)
             
-            
+            graph.addGraph(withName: "fftZoomed",
+                            shouldNormalizeForFFT: true,
+                            numPointsInGraph: 300)
             
             graph.makeGrids() // add grids to graph
         }
         
         // start up the audio model here, querying microphone
-        // audio.startMicrophoneProcessing(withFps: 20) // preferred number of FFT calculations per second
-        
-        // start up the audio model here, querying file
-        audio.startProcesingAudioFileForPlayback(withFps: 20)
+        audio.startMicrophoneProcessing(withFps: 20) // preferred number of FFT calculations per second
+
+        audio.play()
         
         // run the loop for updating the graph peridocially
-        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
             self.updateGraph()
         }
-       
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        
+        timer?.invalidate()
+        graph?.teardown()
+        graph = nil
+        audio.stop()
+        super.viewDidDisappear(animated)
     }
     
     
-    // Part One: Table It #2 (1 pts) - Pause when navigating away from and play when navigating to Viewcontroller
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(true)
-        audio.togglePlaying()
-    }
     
     // periodically, update the graph with refreshed FFT Data
     func updateGraph(){
         
-        if let graph = self.graph{
-            graph.updateGraph(
-                data: self.audio.fftData,
-                forKey: "fft"
-            )
-            
-            // Part Two: Equalize It #4 (1 pts) - Graph the 20 point array after you have filled it in by adding using MetalGraph
-            graph.updateGraph(
-                data: self.audio.fftTwentyData,
-                forKey: "equalize_fft"
-            )
+        if let graph = self.graph {
             
             graph.updateGraph(
-                data: self.audio.timeData,
+                data: self.audio.timeSamples,
                 forKey: "time"
             )
             
+            graph.updateGraph(
+                data: self.audio.fftSamples,
+                forKey: "fft"
+            )
+            
+            // BONUS: show the zoomed FFT
+            // we can start at about 150Hz and show the next 300 points
+            // actual Hz = f_0 * N/F_s
+            let minfreq = min(min(frequency1,frequency2),frequency3)
+            let startIdx:Int = (Int(minfreq)-50) * AudioConstants.AUDIO_BUFFER_SIZE/audio.samplingRate
+            let subArray:[Float] = Array(self.audio.fftData[startIdx...startIdx+300])
+            graph.updateGraph(
+                data: subArray,
+                forKey: "fftZoomed"
+            )
             
             
         }
