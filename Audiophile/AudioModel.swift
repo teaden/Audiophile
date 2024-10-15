@@ -7,64 +7,93 @@
 
 import Foundation
 
-/// Holds
-struct FrequencyMagnitude {
-    let frequency: Float
-    let magnitude: Float
-}
-
+// Houses all functionality for recording audio signals related to iPhone sound card
 class AudioModel {
     
-    var timeSamples: [Float]
-    var fftSamples: [Float]
-    var volumeModuleB: Float = 0.5 // user setable volume
+    // MODULE A AND MODULE B PROPERTIES:
     
-    var frequencyModuleB: Float = 0.0 { // frequency in Hz (changeable by user)
-        didSet{
-            if let manager = self.audioManager {
-                // if using swift for generating the sine wave: when changed, we need to update our increment
-                phaseIncrementModuleB = Float(2*Double.pi*Double(frequencyModuleB) / manager.samplingRate)
-            }
-        }
-    }
+    var timeSamples: [Float]    /// Sampled audio on time domain
+    var fftSamples: [Float]     /// Ssampled audio on frequency domain after FFT
     
+    /// Novocaine audio manager for handling sound card input and output
+    private lazy var audioManager: Novocaine? = {
+        return Novocaine.audioManager()
+    }()
+    
+    /// Used for calculations tied to performing vDSP FFT (input must be power of 2)
+    private lazy var fftHelper: FFTHelper? = {
+        return FFTHelper.init(fftSize: Int32(AUDIO_SAMPLE_BUFFER_SIZE))
+    }()
+    
+    /// Buffer of audio samples from most recent signal (e.g., most recent microphone input) that will copy to timeSamples array
+    private lazy var inputBuffer: CircularBuffer? = {
+        return CircularBuffer.init(numChannels: Int64(self.audioManager!.numInputChannels),
+                                   andBufferSize: Int64(AUDIO_SAMPLE_BUFFER_SIZE))
+    }()
+    
+    /// Number of time-domain audio samples (i.e., size of timeSamples and circular inputBuffer)
+    private var AUDIO_SAMPLE_BUFFER_SIZE: Int
+    
+    
+    // MODULE A PROPERTIES:
+    
+    /// Stores the two frequencies and magnitudes of the two loudest tones played
     lazy var twoLargestFreqs: [FrequencyMagnitude] = [
         FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity),
         FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity)
     ]
     
-    private var AUDIO_SAMPLE_BUFFER_SIZE: Int
     
-    private var phaseModuleB: Float = 0.0
-    private var phaseIncrementModuleB: Float = 0.0
-    private var sineWaveRepeatMax:Float = Float(2*Double.pi)
+    // MODULE B PROPERTIES:
     
-    private lazy var audioManager: Novocaine? = {
-        return Novocaine.audioManager()
-    }()
+    /// Inaudible sine wave frequency (17K Hz to 20K Hz) played when recognizing Doppler shifts
+    var frequencyModuleB: Float = 17500.0 { /// Frequency in Hz (changeable by user via ModuleBViewController)
+        didSet{
+            if let manager = self.audioManager {
+                /// If using swift for generating the sine wave: when changed, we need to update our increment
+                phaseIncrementModuleB = Float(2*Double.pi*Double(frequencyModuleB) / manager.samplingRate)
+            }
+        }
+    }
     
-    private lazy var fftHelper: FFTHelper? = {
-        return FFTHelper.init(fftSize: Int32(AUDIO_SAMPLE_BUFFER_SIZE))
-    }()
+    var volumeModuleB: Float = 0.5              /// Users can set volume of sine wave played at frequencyModuleB
+    var zoomedFftMidIndexDb: Float = 0.0        /// Magnitude of sine wave played at frequencyModuleB
+    var zoomedFftSubArray: [Float]              /// Subarray of fftSamples array ultimately centered at frequencyModuleB
+    var dopplerGesture: DopplerGesture = .none  /// Indicates if hand moving toward, moving away from, or not moving relative to played sine wave
+    
+    private var phaseModuleB: Float = 0.0                       /// Phase of sine wave played at frequencyModuleB
+    private var phaseIncrementModuleB: Float = 0.0              /// Phase increment of sine wave played at frequencyModuleB
+    private var sineWaveRepeatMax:Float = Float(2*Double.pi)    /// Helps prevent overflow after numerous phase incremenets to frequencyModuleB sine wave
+    
+    /// Used for recording the last ten frequencies and volumes associated with played sine wave
+    /// Helps ensure stability when recognizing doppler shifts (i.e., no doppler shift gestures recognized when chaning frequencyMouleB or volumeModuleB)
+    private var rollingIndex: Int = 0
+    private var lastTenFrequencies: [Float] = Array.init(repeating: Float.random(in: 0.0..<1.0), count: 10)
+    private var lastTenVolumes: [Float] = Array.init(repeating: Float.random(in: 0.0..<1.0), count: 10)
     
     
-    private lazy var inputBuffer: CircularBuffer? = {
-        return CircularBuffer.init(numChannels: Int64(self.audioManager!.numInputChannels),
-                                   andBufferSize: Int64(AUDIO_SAMPLE_BUFFER_SIZE))
-    }()
-            
+    // INITIALIZATION:
+    
     init(buffer_size: Int) {
         self.AUDIO_SAMPLE_BUFFER_SIZE = buffer_size
         timeSamples = Array.init(repeating: 0.0, count: self.AUDIO_SAMPLE_BUFFER_SIZE)
         fftSamples = Array.init(repeating: 0.0, count: self.AUDIO_SAMPLE_BUFFER_SIZE / 2)
+        
+        /// Simply sets the zoomed FFT subarray for Module B to be the same as the largest fftSamples array to start by default
+        zoomedFftSubArray = fftSamples
     }
     
+    
+    // MODULE A AND B METHODS:
+    
+    /// Allows Novocaine audio manager to start processing audio
     func play(){
         if let manager = self.audioManager{
             manager.play()
         }
     }
     
+    /// Ends Novocaine audio manager's audio processing
     func stop() {
         if let manager = self.audioManager{
             manager.pause()
@@ -73,90 +102,46 @@ class AudioModel {
         }
         
         if let buffer = self.inputBuffer {
-            buffer.clear() // just makes zeros
+            buffer.clear() // Just makes zeros
         }
         
         inputBuffer = nil
         fftHelper = nil
     }
     
-    // public function for starting processing of microphone data
+    // Public function for starting processing of microphone data
     func startMicrophoneProcessingModuleA(withFps: Double) {
         // setup the microphone to copy to circualr buffer
         if let manager = self.audioManager {
             manager.inputBlock = self.handleMicrophone
             
-            // Repeat this fps times per second using the timer class
-            // Every time this is called, we update the arrays "timeSamples" and "fftSamples"
+            /// Repeat this fps times per second using the timer class
+            /// Every time this is called, we update the arrays "timeSamples" and "fftSamples"
             Timer.scheduledTimer(withTimeInterval: 1.0 / withFps, repeats: true) { _ in
                 self.runEveryIntervalModuleA()
             }
         }
     }
     
-    // public function for starting processing of audio input and output
-    func startAudioIoProcessingModuleB(withFps:Double, withSineFreq: Float) {
-        frequencyModuleB = withSineFreq
-        
-        // setup the microphone to copy to circualr buffer
-        if let manager = self.audioManager {
-            manager.inputBlock = self.handleMicrophone
-            manager.outputBlock = self.handleSpeakerQueryWithSinusoid
-            
-            // repeat this fps times per second using the timer class
-            //   every time this is called, we update the arrays "timeSamples" and "fftSamples"
-            Timer.scheduledTimer(withTimeInterval: 1.0/withFps, repeats: true) { _ in
-                self.runEveryIntervalModuleB()
-            }
-        }
-    }
-    
+    /// Fills circular inputBuffer and timeSamples with time-domain audio samples from recent signal
     private func handleMicrophone (data: Optional<UnsafeMutablePointer<Float>>, numFrames: UInt32, numChannels: UInt32) {
-        // copy samples from the microphone into circular buffer
+        /// Copy samples from the microphone into circular buffer
         self.inputBuffer?.addNewFloatData(data, withNumSamples: Int64(numFrames))
     }
     
-    private func handleSpeakerQueryWithSinusoid(data:Optional<UnsafeMutablePointer<Float>>, numFrames:UInt32, numChannels: UInt32) {
-            if let arrayData = data{
-                var i = 0
-                let chan = Int(numChannels)
-                let frame = Int(numFrames)
-                if chan==1{
-                    while i<frame{
-                        arrayData[i] = sin(phaseModuleB)
-                        phaseModuleB += phaseIncrementModuleB
-                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
-                        i+=1
-                    }
-                } else if chan==2{
-                    let len = frame*chan
-                    while i<len{
-                        arrayData[i] = sin(phaseModuleB)
-                        arrayData[i+1] = arrayData[i]
-                        phaseModuleB += phaseIncrementModuleB
-                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
-                        i+=2
-                    }
-                }
-                // adjust volume of audio file output
-                vDSP_vsmul(arrayData, 1, &(self.volumeModuleB), arrayData, 1, vDSP_Length(numFrames*numChannels))
-            }
-        }
     
+    // MODULE A METHODS:
+    
+    /// Records time-domain audio samples from mic, performs FFT, and indicates if two loudest tones are not silent (i.e., above 0 dB threshold)
     private func runEveryIntervalModuleA(){
         if self.inputBuffer != nil {
-            // copy time data to swift array
+            /// Copy time data to swift array
             self.inputBuffer!.fetchFreshData(&self.timeSamples, // copied into this array
                                              withNumSamples: Int64(self.AUDIO_SAMPLE_BUFFER_SIZE))
             
-            // now take FFT
+            /// Now take FFT
             self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
-                                         andCopydBMagnitudeToBuffer: &self.fftSamples) // fft result is copied into fftData array
-            
-            // at this point, we have saved the data to the arrays:
-            //   timeData: the raw audio samples
-            //   fftData:  the FFT of those same samples
-            // the user can now use these variables however they like
+                                         andCopydBMagnitudeToBuffer: &self.fftSamples) /// FFT result is copied into fftSamples array
             
             let peakFreqs: [FrequencyMagnitude] = self.findTwoLargestFreqs(freqDist: 50)
             
@@ -170,19 +155,7 @@ class AudioModel {
         }
     }
     
-    private func runEveryIntervalModuleB(){
-        if self.inputBuffer != nil {
-            // copy time data to swift array
-            self.inputBuffer!.fetchFreshData(&self.timeSamples, // copied into this array
-                                             withNumSamples: Int64(self.AUDIO_SAMPLE_BUFFER_SIZE))
-            
-            // now take FFT
-            self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
-                                         andCopydBMagnitudeToBuffer: &self.fftSamples) // fft result is copied into fftData array
-        }
-    }
-    
-    /// Utilizes peak finding and interpolation to retrieve frequencies of the two loudest tones at least 'freqDist' (e.g., 50 Hz) apart
+    /// Utilizes peak finding and interpolation to retrieve frequencies of the two loudest tones at least 'freqDist' (e.g., 50 Hz) apart for Module A
     private func findTwoLargestFreqs(freqDist: Int) -> [FrequencyMagnitude] {
    
         /// Simply allow program to fail if this function is utilized without audio manager instantiated for pulling sampling rate
@@ -282,5 +255,105 @@ class AudioModel {
         let magnitudeEstimate: Float = mTwo - 0.25 * (mOne - mThree) * peakPosition
         
         return FrequencyMagnitude(frequency: freqEstimate, magnitude: magnitudeEstimate)
+    }
+    
+    
+    // MODULE B METHODS:
+    
+    /// Public function for starting processing of microphone data and output of sine wave
+    func startAudioIoProcessingModuleB(withFps:Double) {
+        
+        /// Setup the microphone to copy to circualr buffer
+        if let manager = self.audioManager {
+            manager.inputBlock = self.handleMicrophone
+            manager.outputBlock = self.handleSpeakerQueryWithSinusoid
+            
+            /// Repeat this fps times per second using the timer class
+            /// Every time this is called, we update the arrays "timeSamples" and "fftSamples"
+            Timer.scheduledTimer(withTimeInterval: 1.0/withFps, repeats: true) { _ in
+                self.runEveryIntervalModuleB()
+            }
+        }
+    }
+    
+    /// Functionality used for outputting sine wave to speaker
+    private func handleSpeakerQueryWithSinusoid(data:Optional<UnsafeMutablePointer<Float>>, numFrames:UInt32, numChannels: UInt32) {
+            if let arrayData = data{
+                var i = 0
+                let chan = Int(numChannels)
+                let frame = Int(numFrames)
+                if chan==1{
+                    while i<frame{
+                        arrayData[i] = sin(phaseModuleB)
+                        phaseModuleB += phaseIncrementModuleB
+                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
+                        i+=1
+                    }
+                } else if chan==2{
+                    let len = frame*chan
+                    while i<len{
+                        arrayData[i] = sin(phaseModuleB)
+                        arrayData[i+1] = arrayData[i]
+                        phaseModuleB += phaseIncrementModuleB
+                        if (phaseModuleB >= sineWaveRepeatMax) { phaseModuleB -= sineWaveRepeatMax }
+                        i+=2
+                    }
+                }
+                
+                /// Adjust volume of audio file output
+                vDSP_vsmul(arrayData, 1, &(self.volumeModuleB), arrayData, 1, vDSP_Length(numFrames*numChannels))
+            }
+        }
+    
+    /// Records time-domain audio samples from mic, performs FFT, zooms FFT array on chosen frequencyModuleB, and tracks Doppler shift gestures
+    private func runEveryIntervalModuleB(){
+        if self.inputBuffer != nil {
+            /// Copy time data to swift array
+            self.inputBuffer!.fetchFreshData(&self.timeSamples, // copied into this array
+                                             withNumSamples: Int64(self.AUDIO_SAMPLE_BUFFER_SIZE))
+            
+            /// Now take FFT
+            self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
+                                         andCopydBMagnitudeToBuffer: &self.fftSamples) /// FFT result is copied into fftSamples array
+            
+            self.lastTenVolumes[self.rollingIndex] = self.volumeModuleB
+            self.lastTenFrequencies[self.rollingIndex] = self.frequencyModuleB
+            
+            self.trackDopplerShift()
+            
+            self.rollingIndex = (self.rollingIndex + 1) % 10
+            print(self.rollingIndex)
+        }
+    }
+    
+    /// Ensures chosen sine wave frequency for Module B remains as the center point of the FFT graph to better see Doppler shift gestures
+    private func trackDopplerShift() {
+        /// Simply allow program to fail if this function is utilized without audio manager instantiated for pulling sampling rate
+        guard let samplingRate = self.audioManager?.samplingRate else {
+            fatalError("Audio manager not initialized for pulling sampling rate to interpolate max")
+        }
+        
+        let numPts = 100
+        
+        let midIndex: Int = Int(Double(self.frequencyModuleB) * Double(AudioConstants.AUDIO_BUFFER_SIZE) / samplingRate) + 1
+        self.zoomedFftSubArray = Array(self.fftSamples[(midIndex - numPts)...(midIndex + numPts)])
+        self.zoomedFftMidIndexDb = self.fftSamples[midIndex]
+        
+        let stride = vDSP_Stride(1)
+        let n = vDSP_Length(numPts)
+
+        var lowerFreqMaxMag: Float = .nan
+        var upperFreqMaxMag: Float = .nan
+
+        vDSP_maxv(&self.zoomedFftSubArray, stride, &lowerFreqMaxMag, n)
+        vDSP_maxv(&self.zoomedFftSubArray + (numPts + 1), stride, &upperFreqMaxMag, n)
+
+        if lowerFreqMaxMag >= (0.85 * self.zoomedFftMidIndexDb) && lowerFreqMaxMag > upperFreqMaxMag {
+            self.dopplerGesture = .away
+        } else if upperFreqMaxMag >= (0.85 * self.zoomedFftMidIndexDb) && upperFreqMaxMag > lowerFreqMaxMag {
+            self.dopplerGesture = .toward
+        } else {
+            self.dopplerGesture = .none
+        }
     }
 }

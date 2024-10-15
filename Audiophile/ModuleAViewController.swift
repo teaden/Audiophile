@@ -8,11 +8,13 @@
 import UIKit
 import Metal
 
+// For Module A: Handles the display of labels based on updates of two loudest tones from FFT
 class ModuleAViewController: UIViewController {
 
-    // setup audio model
+    /// Setup audio model
     let audio = AudioModel(buffer_size: AudioConstants.AUDIO_BUFFER_SIZE)
     
+    /// For periodically handling label updates
     var timer: Timer? = nil
 
     override func viewDidLoad() {
@@ -22,12 +24,12 @@ class ModuleAViewController: UIViewController {
     @IBOutlet weak var freqOneLabel: UILabel!
     @IBOutlet weak var freqTwoLabel: UILabel!
     
-    // Play when navigating to ViewController
+    /// Starts processing audio when navigating to ViewController
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        // start up the audio model here, querying microphone
-        // withFps: preferred number of FFT calculations per second
+        /// Start up the audio model here, querying microphone
+        /// withFps: preferred number of FFT calculations per second
         audio.startMicrophoneProcessingModuleA(withFps: 20)
         audio.play()
         
@@ -36,7 +38,7 @@ class ModuleAViewController: UIViewController {
         }
     }
     
-    // Pause when navigating away from ViewController
+    /// Pauses when navigating away from ViewController
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(true)
         
@@ -44,9 +46,9 @@ class ModuleAViewController: UIViewController {
         timer?.invalidate()
     }
     
+    // Updates largest and second-largest frequency labels with largest and second-largest tones from audio model
     private func updateLabels() {
         freqOneLabel.text = "Frequency 1: \(audio.twoLargestFreqs[0].frequency > -1.0 ? audio.twoLargestFreqs[0].frequency.description : "Noise") (Hz)"
-        
         freqTwoLabel.text = "Frequency 2: \(audio.twoLargestFreqs[1].frequency > -1.0 ? audio.twoLargestFreqs[1].frequency.description : "Noise") (Hz)"
     }
 }
