@@ -13,7 +13,6 @@ class ModuleBViewController: UIViewController {
     @IBOutlet weak var userView: UIView!
     @IBOutlet weak var freqLabel: UILabel!
     @IBOutlet weak var dbLabel: UILabel!
-    @IBOutlet weak var volLabel: UILabel!
     @IBOutlet weak var dopplerGestureLabel: UILabel!
     
     /// Setup audio model
@@ -37,12 +36,6 @@ class ModuleBViewController: UIViewController {
         freqLabel.text = "Frequency: \(sender.value)"
     }
     
-    /// Action for changing volume via slider
-    @IBAction func changeVolume(_ sender: UISlider) {
-        self.audio.volumeModuleB = sender.value
-        volLabel.text = "Volume: \(sender.value)"
-    }
-    
     /// Sets up time-domain and zoomed FFT graphs and begins processing audio
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -61,7 +54,9 @@ class ModuleBViewController: UIViewController {
         }
         
         /// Start up the audio model here, querying microphone and playing sine wave
-        audio.startAudioIoProcessingModuleB(withFps: 20)
+        /// withFps: preferred number of FFT calculations per second
+        /// withSineFreq: chosen frequency of played sine wave
+        audio.startAudioIoProcessingModuleB(withFps: 20, withSineFreq: 17000)
         audio.play()
         
         /// Run the loop for updating the graph, dB label, and Doppler Shift gesture recognition label peridocially
@@ -80,7 +75,7 @@ class ModuleBViewController: UIViewController {
     }
     
     /// Used for periodically updating time-domain graph, zoomed FFT graph,, dB label, and Doppler Shift gesture recognition label
-    func updateGraphAndLabels(){
+    func updateGraphAndLabels() {
         
         if let graph = self.graph {
             

@@ -47,7 +47,7 @@ class AudioModel {
     // MODULE B PROPERTIES:
     
     /// Inaudible sine wave frequency (17K Hz to 20K Hz) played when recognizing Doppler shifts
-    var frequencyModuleB: Float = 17500.0 { /// Frequency in Hz (changeable by user via ModuleBViewController)
+    var frequencyModuleB: Float = 17000.0 { /// Frequency in Hz (changeable by user via ModuleBViewController)
         didSet{
             if let manager = self.audioManager {
                 /// If using swift for generating the sine wave: when changed, we need to update our increment
@@ -56,7 +56,9 @@ class AudioModel {
         }
     }
     
-    var volumeModuleB: Float = 0.5              /// Users can set volume of sine wave played at frequencyModuleB
+    /// Default volume of sine wave played at frequencyModuleB
+    var volumeThousandsModuleB: Float = 0.5
+    
     var zoomedFftMidIndexDb: Float = 0.0        /// Magnitude of sine wave played at frequencyModuleB
     var zoomedFftSubArray: [Float]              /// Subarray of fftSamples array ultimately centered at frequencyModuleB
     var dopplerGesture: DopplerGesture = .none  /// Indicates if hand moving toward, moving away from, or not moving relative to played sine wave
@@ -66,10 +68,23 @@ class AudioModel {
     private var sineWaveRepeatMax:Float = Float(2*Double.pi)    /// Helps prevent overflow after numerous phase incremenets to frequencyModuleB sine wave
     
     /// Used for recording the last ten frequencies and volumes associated with played sine wave
-    /// Helps ensure stability when recognizing doppler shifts (i.e., no doppler shift gestures recognized when chaning frequencyMouleB or volumeModuleB)
-    private var rollingIndex: Int = 0
-    private var lastTenFrequencies: [Float] = Array.init(repeating: Float.random(in: 0.0..<1.0), count: 10)
-    private var lastTenVolumes: [Float] = Array.init(repeating: Float.random(in: 0.0..<1.0), count: 10)
+    /// Helps ensure stability when recognizing doppler shifts (e.g., no doppler shift gestures recognized when changing frequencyMouleB)
+    private var rollingFreqVolIndex: Int = 0
+    private var lastTenFrequencies: [Float]?
+    
+    /// Used for establishing FFT noise baseline for determining Doppler shifts through relative comparisons
+    private var rollingFftIndex: Int = 0
+    private var lastTenFftAverages: [Float]?
+    private var currentRollingFftAverage: [Float]?  // Replaces lastTenFftAverages after 10 averages
+    
+    /// Used for ensuring FFT data is positive for Doppler shift frequency bin comparisons
+    private var bias: Float = 110.0
+    
+    // Used to adjusts inherent skewness between high and low frequency bins to allow for fair or level Doppler shift comparisons
+    private var coreThresholdValues: [Float] = Array.init(repeating: 0.0, count: 10)
+    private var coreThresholddAverageNum: Int = 0   // Amount of frames of high-low frequency ratios averaged into coreThreshold
+    private var coreThresholdMean: Float = 0
+    private var coreThresholdDeviation: Float = 0
     
     
     // INITIALIZATION:
@@ -261,7 +276,13 @@ class AudioModel {
     // MODULE B METHODS:
     
     /// Public function for starting processing of microphone data and output of sine wave
-    func startAudioIoProcessingModuleB(withFps:Double) {
+    func startAudioIoProcessingModuleB(withFps: Double, withSineFreq: Float) {
+        self.frequencyModuleB = withSineFreq
+        
+        /// Allows Doppler shifts to be recognized from starting sine wave frequency and volume parameters
+        /// Doppler shifts only recognized when frequency and volume have not changed for past 10 frames
+        /// Prevents scenario where changes in sine wave frequency or volume are registered as Doppler shifts
+        lastTenFrequencies = Array.init(repeating: self.frequencyModuleB, count: 10)
         
         /// Setup the microphone to copy to circualr buffer
         if let manager = self.audioManager {
@@ -301,7 +322,7 @@ class AudioModel {
                 }
                 
                 /// Adjust volume of audio file output
-                vDSP_vsmul(arrayData, 1, &(self.volumeModuleB), arrayData, 1, vDSP_Length(numFrames*numChannels))
+                vDSP_vsmul(arrayData, 1, &(self.volumeThousandsModuleB), arrayData, 1, vDSP_Length(numFrames*numChannels))
             }
         }
     
@@ -316,13 +337,18 @@ class AudioModel {
             self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
                                          andCopydBMagnitudeToBuffer: &self.fftSamples) /// FFT result is copied into fftSamples array
             
-            self.lastTenVolumes[self.rollingIndex] = self.volumeModuleB
-            self.lastTenFrequencies[self.rollingIndex] = self.frequencyModuleB
+            /// Add currently set volume and sine wave frequency to respective arrays of past 10 data points
+            /// Only start looking for Doppler shifts if freq and volume have not changed during the past 10 frames
+            /// Prevents scenario where freq and volume changes register as Doppler shifts
+            self.lastTenFrequencies![self.rollingFreqVolIndex] = self.frequencyModuleB
             
             self.trackDopplerShift()
             
-            self.rollingIndex = (self.rollingIndex + 1) % 10
-            print(self.rollingIndex)
+            /// Circularly update frequency and volume again 10 times
+            self.rollingFreqVolIndex += 1
+            if self.rollingFreqVolIndex == 10 {
+                self.rollingFreqVolIndex = 0
+            }
         }
     }
     
@@ -333,27 +359,114 @@ class AudioModel {
             fatalError("Audio manager not initialized for pulling sampling rate to interpolate max")
         }
         
-        let numPts = 100
-        
+        /// Calculates the FFT array index of the chosen frequency of the currently playing sine wave
         let midIndex: Int = Int(Double(self.frequencyModuleB) * Double(AudioConstants.AUDIO_BUFFER_SIZE) / samplingRate) + 1
+        
+        /// Creates a subarray of FFT array zoomed in and centered on chosen frequency +/- 100 indices for graphical view on frontend
+        let numPts = 100
         self.zoomedFftSubArray = Array(self.fftSamples[(midIndex - numPts)...(midIndex + numPts)])
         self.zoomedFftMidIndexDb = self.fftSamples[midIndex]
         
-        let stride = vDSP_Stride(1)
-        let n = vDSP_Length(numPts)
-
-        var lowerFreqMaxMag: Float = .nan
-        var upperFreqMaxMag: Float = .nan
-
-        vDSP_maxv(&self.zoomedFftSubArray, stride, &lowerFreqMaxMag, n)
-        vDSP_maxv(&self.zoomedFftSubArray + (numPts + 1), stride, &upperFreqMaxMag, n)
-
-        if lowerFreqMaxMag >= (0.85 * self.zoomedFftMidIndexDb) && lowerFreqMaxMag > upperFreqMaxMag {
-            self.dopplerGesture = .away
-        } else if upperFreqMaxMag >= (0.85 * self.zoomedFftMidIndexDb) && upperFreqMaxMag > lowerFreqMaxMag {
-            self.dopplerGesture = .toward
-        } else {
-            self.dopplerGesture = .none
+        /// Ensures normalized zoomed FFT array has positive values for Doppler shift frequency bin magnitude ratio comparisons
+        if self.rollingFftIndex == 0 {
+            let zoomedFftMin = vDSP.minimum(self.zoomedFftSubArray)
+            
+            if zoomedFftMin < 0 {
+                self.bias = -1 * zoomedFftMin
+            }
         }
+        
+        /// Normalized zoomed FFT array for doppler shift calculations
+        var normalizedFftArray: [Float] = self.zoomedFftSubArray
+        self.normalizeFFTData(&normalizedFftArray, gain: 1.0, bias: self.bias)
+        
+        /// Averages "range" number of frequency magnitudes both before and after chosen frequency for tracking Doppler shifts
+        let range = 4
+        var currentAverages: [Float] = [0.0, 0.0]
+        vDSP_meanv(&normalizedFftArray + (numPts - range), vDSP_Stride(1), &(currentAverages[0]), vDSP_Length(range))
+        vDSP_meanv(&normalizedFftArray + (numPts + 1), vDSP_Stride(1), &(currentAverages[1]), vDSP_Length(range))
+        
+        /// Do not track Doppler shifts if user has changed chosen sine wave frequency or volume recently
+        /// This prevents from sine wave frequency or volume changes registering as Doppler shifts
+        if vDSP.mean(self.lastTenFrequencies!) != self.frequencyModuleB {
+            /// Reset FFT baseline average 'lastTenFftAverages' for magnitudes and nosie when chosen sine wave frequency or volume changes
+            self.lastTenFftAverages = nil
+            self.coreThresholdValues = Array.init(repeating: 0.0, count: 10)
+            self.coreThresholddAverageNum = 0
+            self.currentRollingFftAverage = currentAverages
+            self.rollingFftIndex = 1
+            self.dopplerGesture = .unavailable
+        
+        /// Add to current rolling FFT average if there is no 10-point averaged FFT baseline for relative comparisons for Doppler shift determination
+        } else if self.lastTenFftAverages == nil {
+            self.currentRollingFftAverage = self.currentRollingFftAverage == nil ? currentAverages : vDSP.add(self.currentRollingFftAverage!, currentAverages)
+            self.rollingFftIndex += 1
+            self.dopplerGesture = .calibrating
+        
+        /// Compares current-baseline high frequency magnitudes against current-baseline low frequency magnitudes for 10 frames to learn "skewness" threshold
+        } else if self.coreThresholddAverageNum < 10 {
+            self.coreThresholdValues[self.coreThresholddAverageNum] = (currentAverages[1] / self.lastTenFftAverages![1]) / (currentAverages[0] / self.lastTenFftAverages![0])
+            self.coreThresholddAverageNum += 1
+            
+            /// Calculate mean and standard deviation of the 10 threshold values
+            if self.coreThresholddAverageNum == 10 {
+                
+                let count = self.coreThresholdValues.count
+                let n = vDSP_Length(count)
+
+                vDSP_meanv(&self.coreThresholdValues, 1, &self.coreThresholdMean, n)
+                
+                self.coreThresholdDeviation = vDSP.maximum(self.coreThresholdValues) - vDSP.minimum(self.coreThresholdValues)
+            }
+            
+            self.dopplerGesture = .calibrating
+            
+        /// Compare current-baseline high frequency magnitude averages to current-baseline low frequency magnitude averages
+        /// Ratio of ratios may mitigate some of the effects of noise that both sides experience
+        } else {
+            let upperThreshold: Float = self.coreThresholdMean + self.coreThresholdDeviation
+            let lowerThreshold: Float = self.coreThresholdMean - self.coreThresholdDeviation
+            
+            let ratioOfRatios = (currentAverages[1] / self.lastTenFftAverages![1]) / (currentAverages[0] / self.lastTenFftAverages![0])
+            print("upper:", upperThreshold)
+            print("lower:", lowerThreshold)
+            print("RofR:", ratioOfRatios)
+            
+            if ratioOfRatios > upperThreshold {
+                self.dopplerGesture = .toward
+            } else if ratioOfRatios < lowerThreshold {
+                self.dopplerGesture = .away
+            } else {
+                self.dopplerGesture = .none
+            }
+            
+            if self.dopplerGesture == .none {
+                self.currentRollingFftAverage = self.currentRollingFftAverage == nil ? currentAverages : vDSP.add(self.currentRollingFftAverage!, currentAverages)
+                self.rollingFftIndex += 1
+            }
+        }
+        
+        /// Establish a new baseline for noise comparisons after 10 frames in current rolling average
+        if self.rollingFftIndex == 10 {
+            self.lastTenFftAverages = vDSP.divide(
+                Float(self.rollingFftIndex),
+                self.currentRollingFftAverage!
+            )
+            
+            self.currentRollingFftAverage = nil
+            self.rollingFftIndex = 0
+            
+            // Reset and recalculate coreThresholdValues
+            self.coreThresholdValues = Array.init(repeating: 0.0, count: 10)
+            self.coreThresholddAverageNum = 0
+        }
+    }
+    
+    /// Normalizes FFT output magnitude similar to MetalGraph shouldNormalizeForFFT
+    /// Utilized because the zoomed and normalized FFT graph shows apparent Doppler shifts that are hard to find in the raw data
+    func normalizeFFTData(_ data: inout [Float], gain: Float, bias: Float) {
+        var gain: Float = gain
+        var bias: Float = bias
+        vDSP_vsmsa(data, 1, &gain, &bias, &data, 1, vDSP_Length(data.count))
     }
 }
