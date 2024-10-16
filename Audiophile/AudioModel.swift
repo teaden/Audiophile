@@ -48,7 +48,7 @@ class AudioModel {
     
     /// Upper and lower decibel threshold for recognizing two loudest tones
     private var upperDecibelThreshold: Float = 5.0
-    private var lowerDecibelThreshold: Float = -1
+    private var lowerDecibelThreshold: Float = -3
     
     /// Decibel thresholds for recognizing max and second-max freq of vowel sounds
     private var upperVowelDbThreshold: Float = 20.0
