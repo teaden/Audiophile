@@ -37,11 +37,22 @@ class AudioModel {
     
     // MODULE A PROPERTIES:
     
+    /// For Module exceptional credit recognizing "ooo" and "ahh"
+    var lastVowel: VowelSound = .none
+    
     /// Stores the two frequencies and magnitudes of the two loudest tones played
     lazy var twoLargestFreqs: [FrequencyMagnitude] = [
         FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity),
         FrequencyMagnitude(frequency: -1.0, magnitude: -Float.infinity)
     ]
+    
+    /// Upper and lower decibel threshold for recognizing two loudest tones
+    private var upperDecibelThreshold: Float = 5.0
+    private var lowerDecibelThreshold: Float = -1
+    
+    /// Decibel thresholds for recognizing max and second-max freq of vowel sounds
+    private var upperVowelDbThreshold: Float = 20.0
+    private var lowerVowelDbThreshold: Float = 10.0
     
     
     // MODULE B PROPERTIES:
@@ -128,7 +139,7 @@ class AudioModel {
         }
         
         if let buffer = self.inputBuffer {
-            buffer.clear() // Just makes zeros
+            buffer.clear() /// Just makes zeros
         }
         
         inputBuffer = nil
@@ -171,12 +182,37 @@ class AudioModel {
             
             let peakFreqs: [FrequencyMagnitude] = self.findTwoLargestFreqs(freqDist: 50)
             
-            if peakFreqs[0].magnitude > 0 {
+            if peakFreqs[0].magnitude > self.upperDecibelThreshold  {
                 self.twoLargestFreqs[0] = peakFreqs[0]
             }
             
-            if peakFreqs[1].magnitude > 0 {
+            if peakFreqs[1].magnitude > self.lowerDecibelThreshold {
                 self.twoLargestFreqs[1] = peakFreqs[1]
+            }
+            
+  
+            if (peakFreqs[0].magnitude > self.upperVowelDbThreshold || peakFreqs[1].magnitude > self.lowerVowelDbThreshold) {
+                recognizeVowels(freqOne: peakFreqs[0].frequency, freqTwo: peakFreqs[1].frequency)
+            }
+        }
+    }
+    
+    /// Recognize common "ooo" and "ahhh" largest and second largest frequency basis
+    private func recognizeVowels(freqOne: Float, freqTwo: Float) {
+        let maxFreqBase: Int = Int(freqOne) / 100
+        let maxFreqTwoBase: Int = Int(freqTwo) / 100
+        
+        if maxFreqBase != 0 && maxFreqTwoBase != 0 {
+            /// Second frequency is seems to be 3 times as large as first frequency for "ooo"
+            if maxFreqTwoBase / maxFreqBase == 3 {
+                self.lastVowel = .ooo
+            } else {
+                /// The ratio between first and second frequency with either as denominator seems to bounce around between 5 and 7
+                /// This could be related to how second frequency magnitude is demoted to that of the first when a new largest frequency magnitude is discovered
+                if (maxFreqBase / maxFreqTwoBase == 7 || maxFreqTwoBase / maxFreqBase == 7) ||
+                    (maxFreqBase / maxFreqTwoBase == 5 || maxFreqTwoBase / maxFreqBase == 5) {
+                    self.lastVowel = .ahh
+                }
             }
         }
     }
@@ -395,7 +431,6 @@ class AudioModel {
         /// Averages "range" number of frequency magnitudes before and after the chosen frequency
         /// These are the respective frequency bins (i.e., magnitudes) that will be compared to determine a Doppler Shift
         let range = 10
-        let numPtsInArray = endIdx - startIdx
         var currentAverages: [Float] = [0.0, 0.0]
         vDSP_meanv(&normalizedFftArray + (numPts - range), vDSP_Stride(1), &(currentAverages[0]), vDSP_Length(range))
         vDSP_meanv(&normalizedFftArray + (numPts + 1), vDSP_Stride(1), &(currentAverages[1]), vDSP_Length(range))
@@ -443,8 +478,6 @@ class AudioModel {
             return
         }
 
-        // MARK: - Calibration Phase
-        
         /// Collect samples of ratio of current-baseline high freq magnitude and current-baseline low freq magnitude ratios
         /// Increases in current high frequency magnitudes or current low frequency magnitudes relative to these samples may suggest "towards", "away" Doppler shift motions
         if self.isCalibrating {

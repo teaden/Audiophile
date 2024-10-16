@@ -113,11 +113,21 @@
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Last Vowel: None" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="wLd-yp-qB7">
+                                <rect key="frame" x="16" y="498" width="361" height="29"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="24"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
                             <constraint firstItem="pGt-Hn-29g" firstAttribute="trailing" secondItem="HRS-1r-zk7" secondAttribute="trailing" id="7eF-rv-Qs5"/>
+                            <constraint firstItem="wLd-yp-qB7" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="16" id="8zN-St-Lpz"/>
+                            <constraint firstItem="6Tk-OE-BBY" firstAttribute="trailing" secondItem="wLd-yp-qB7" secondAttribute="trailing" constant="16" id="Yor-7j-PCw"/>
+                            <constraint firstItem="wLd-yp-qB7" firstAttribute="top" secondItem="pGt-Hn-29g" secondAttribute="bottom" constant="57.329999999999998" id="jeD-ZN-H4C"/>
+                            <constraint firstItem="6Tk-OE-BBY" firstAttribute="bottom" secondItem="wLd-yp-qB7" secondAttribute="bottom" constant="291" id="jmK-Zn-Xla"/>
                             <constraint firstItem="pGt-Hn-29g" firstAttribute="leading" secondItem="8bC-Xf-vdC" secondAttribute="leadingMargin" id="m2d-Ts-zMC"/>
                             <constraint firstItem="pGt-Hn-29g" firstAttribute="top" secondItem="HRS-1r-zk7" secondAttribute="bottom" constant="41" id="nxM-lg-hed"/>
                             <constraint firstItem="pGt-Hn-29g" firstAttribute="leading" secondItem="HRS-1r-zk7" secondAttribute="leading" id="r8T-BW-IEG"/>
@@ -128,6 +138,7 @@
                     <connections>
                         <outlet property="freqOneLabel" destination="HRS-1r-zk7" id="FCK-Ck-3Mw"/>
                         <outlet property="freqTwoLabel" destination="pGt-Hn-29g" id="Oha-ni-Xk4"/>
+                        <outlet property="vowelLabel" destination="wLd-yp-qB7" id="IoJ-db-bIk"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="dkx-z0-nzr" sceneMemberID="firstResponder"/>

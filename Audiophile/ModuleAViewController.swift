@@ -23,6 +23,7 @@ class ModuleAViewController: UIViewController {
     
     @IBOutlet weak var freqOneLabel: UILabel!
     @IBOutlet weak var freqTwoLabel: UILabel!
+    @IBOutlet weak var vowelLabel: UILabel!
     
     /// Starts processing audio when navigating to ViewController
     override func viewWillAppear(_ animated: Bool) {
@@ -46,9 +47,12 @@ class ModuleAViewController: UIViewController {
         timer?.invalidate()
     }
     
-    // Updates largest and second-largest frequency labels with largest and second-largest tones from audio model
+    /// Updates largest and second-largest frequency labels with largest and second-largest tones from audio model
+    /// Updates vowelLabel to indicate if "ooo" or "ahh" or none was heard
     private func updateLabels() {
         freqOneLabel.text = "Frequency 1: \(audio.twoLargestFreqs[0].frequency > -1.0 ? audio.twoLargestFreqs[0].frequency.description : "Noise") (Hz)"
         freqTwoLabel.text = "Frequency 2: \(audio.twoLargestFreqs[1].frequency > -1.0 ? audio.twoLargestFreqs[1].frequency.description : "Noise") (Hz)"
+        
+        vowelLabel.text = "Last Vowel: \(audio.lastVowel.rawValue)"
     }
 }
