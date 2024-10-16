@@ -59,18 +59,16 @@ class AudioModel {
     /// Default volume of sine wave played at frequencyModuleB
     var volumeThousandsModuleB: Float = 0.5
     
-    var zoomedFftMidIndexDb: Float = 0.0        /// Magnitude of sine wave played at frequencyModuleB
-    var zoomedFftSubArray: [Float]              /// Subarray of fftSamples array ultimately centered at frequencyModuleB
-    var dopplerGesture: DopplerGesture = .none  /// Indicates if hand moving toward, moving away from, or not moving relative to played sine wave
+    var zoomedFftMidIndexDb: Float = 0.0                   /// Magnitude of sine wave played at frequencyModuleB
+    var zoomedFftSubArray: [Float]                         /// Subarray of fftSamples array ultimately centered at frequencyModuleB
+    var dopplerGesture: DopplerGesture = .calibrating      /// Indicates if hand moving toward, moving away from, or not moving relative to played sine wave
     
     private var phaseModuleB: Float = 0.0                       /// Phase of sine wave played at frequencyModuleB
     private var phaseIncrementModuleB: Float = 0.0              /// Phase increment of sine wave played at frequencyModuleB
     private var sineWaveRepeatMax:Float = Float(2*Double.pi)    /// Helps prevent overflow after numerous phase incremenets to frequencyModuleB sine wave
     
-    /// Used for recording the last ten frequencies and volumes associated with played sine wave
-    /// Helps ensure stability when recognizing doppler shifts (e.g., no doppler shift gestures recognized when changing frequencyMouleB)
-    private var rollingFreqVolIndex: Int = 0
-    private var lastTenFrequencies: [Float]?
+    /// Index of chosen sine wave frequency peak from fftSamples
+    private var midIndex: Int = -1
     
     /// Used for establishing FFT noise baseline for determining Doppler shifts through relative comparisons
     private var rollingFftIndex: Int = 0
@@ -80,11 +78,24 @@ class AudioModel {
     /// Used for ensuring FFT data is positive for Doppler shift frequency bin comparisons
     private var bias: Float = 110.0
     
-    // Used to adjusts inherent skewness between high and low frequency bins to allow for fair or level Doppler shift comparisons
-    private var coreThresholdValues: [Float] = Array.init(repeating: 0.0, count: 10)
-    private var coreThresholddAverageNum: Int = 0   // Amount of frames of high-low frequency ratios averaged into coreThreshold
-    private var coreThresholdMean: Float = 0
-    private var coreThresholdDeviation: Float = 0
+    /// Stabilization period after user changes frequency ensures frequency chage not registered as Doppler Shift
+    private var previousFrequency: Float = 17000.0      /// Used for recording the previous with played sine wave
+    private var isStabilizing: Bool = false
+    private var stabilizationCounter: Int = 0
+    private let stabilizationThreshold: Int = 30
+    
+    /// A core threshold value is one sample of the ratio between preceding and subsequent frequency magnitudes relative to played sine wave frequency
+    /// Used for learning and "zeroing out" the skewness between both low and high frequency ranges so that Doppler Shifts (i.e., relative increases/decreases) can be determined
+    private var coreThresholdValues: [Float] = []
+    private let thresholdWindowSize: Int = 30
+    private var coreThresholdMean: Float = 0.0
+    private var coreThresholdDeviation: Float = 0.0
+    private var coreThresholddAverageNum: Int = 0 // Counter for threshold calculation
+    
+    /// Calibration is a small period of gathering core threshold values before Doppler shift gesture recognition is ready
+    private var isCalibrating: Bool = true
+    private var calibrationSampleCount: Int = 0
+    private let calibrationSampleThreshold: Int = 30
     
     
     // INITIALIZATION:
@@ -279,10 +290,10 @@ class AudioModel {
     func startAudioIoProcessingModuleB(withFps: Double, withSineFreq: Float) {
         self.frequencyModuleB = withSineFreq
         
-        /// Allows Doppler shifts to be recognized from starting sine wave frequency and volume parameters
-        /// Doppler shifts only recognized when frequency and volume have not changed for past 10 frames
-        /// Prevents scenario where changes in sine wave frequency or volume are registered as Doppler shifts
-        lastTenFrequencies = Array.init(repeating: self.frequencyModuleB, count: 10)
+        /// Allows Doppler shifts to be recognized from starting sine wave frequency
+        /// Doppler shifts only recognized when frequency and volume have not changed
+        /// Prevents scenario where changes in sine wave frequency are  registered as Doppler shifts
+        self.previousFrequency = frequencyModuleB
         
         /// Setup the microphone to copy to circualr buffer
         if let manager = self.audioManager {
@@ -337,128 +348,205 @@ class AudioModel {
             self.fftHelper!.performForwardFFT(withData: &self.timeSamples,
                                          andCopydBMagnitudeToBuffer: &self.fftSamples) /// FFT result is copied into fftSamples array
             
-            /// Add currently set volume and sine wave frequency to respective arrays of past 10 data points
-            /// Only start looking for Doppler shifts if freq and volume have not changed during the past 10 frames
-            /// Prevents scenario where freq and volume changes register as Doppler shifts
-            self.lastTenFrequencies![self.rollingFreqVolIndex] = self.frequencyModuleB
-            
             self.trackDopplerShift()
-            
-            /// Circularly update frequency and volume again 10 times
-            self.rollingFreqVolIndex += 1
-            if self.rollingFreqVolIndex == 10 {
-                self.rollingFreqVolIndex = 0
-            }
         }
     }
     
-    /// Ensures chosen sine wave frequency for Module B remains as the center point of the FFT graph to better see Doppler shift gestures
+    /// Tracks Doppler shift gestures by processing FFT data and updating thresholds
     private func trackDopplerShift() {
-        /// Simply allow program to fail if this function is utilized without audio manager instantiated for pulling sampling rate
+        /// Ensure the audio manager is initialized to get the sampling rate
         guard let samplingRate = self.audioManager?.samplingRate else {
             fatalError("Audio manager not initialized for pulling sampling rate to interpolate max")
         }
         
-        /// Calculates the FFT array index of the chosen frequency of the currently playing sine wave
-        let midIndex: Int = Int(Double(self.frequencyModuleB) * Double(AudioConstants.AUDIO_BUFFER_SIZE) / samplingRate) + 1
-        
-        /// Creates a subarray of FFT array zoomed in and centered on chosen frequency +/- 100 indices for graphical view on frontend
+        /// Check if the sine wave frequency has changed
+        if self.frequencyModuleB != self.previousFrequency {
+            /// Indicate stabilization so that frequency change not registered as Doppler Shift
+            self.isStabilizing = true
+            self.stabilizationCounter = 0
+            self.dopplerGesture = .unavailable
+            self.previousFrequency = self.frequencyModuleB
+
+            /// Update midIndex and other frequency-dependent variables
+            let midIndex: Int = Int(Double(self.frequencyModuleB) * Double(AudioConstants.AUDIO_BUFFER_SIZE) / samplingRate) + 1
+            self.midIndex = midIndex
+        } else if self.midIndex == -1 {
+            /// Initialize midIndex if not set to valid index
+            let midIndex: Int = Int(Double(self.frequencyModuleB) * Double(AudioConstants.AUDIO_BUFFER_SIZE) / samplingRate) + 1
+            self.midIndex = midIndex
+        }
+
+        /// Create a subarray of FFT data centered on the chosen frequency
         let numPts = 100
-        self.zoomedFftSubArray = Array(self.fftSamples[(midIndex - numPts)...(midIndex + numPts)])
+        let fftSamplesCount = self.fftSamples.count
+        let startIdx = max(0, midIndex - numPts)
+        let endIdx = min(fftSamplesCount - 1, midIndex + numPts)
+        self.zoomedFftSubArray = Array(self.fftSamples[startIdx...endIdx])
         self.zoomedFftMidIndexDb = self.fftSamples[midIndex]
-        
-        /// Ensures normalized zoomed FFT array has positive values for Doppler shift frequency bin magnitude ratio comparisons
+
+        /// Normalize the FFT data to have positive values for ratio calculations
         if self.rollingFftIndex == 0 {
             let zoomedFftMin = vDSP.minimum(self.zoomedFftSubArray)
-            
-            if zoomedFftMin < 0 {
-                self.bias = -1 * zoomedFftMin
-            }
+            self.bias = zoomedFftMin < 0 ? -zoomedFftMin : 0
         }
-        
-        /// Normalized zoomed FFT array for doppler shift calculations
         var normalizedFftArray: [Float] = self.zoomedFftSubArray
         self.normalizeFFTData(&normalizedFftArray, gain: 1.0, bias: self.bias)
-        
-        /// Averages "range" number of frequency magnitudes both before and after chosen frequency for tracking Doppler shifts
-        let range = 4
+
+        /// Averages "range" number of frequency magnitudes before and after the chosen frequency
+        /// These are the respective frequency bins (i.e., magnitudes) that will be compared to determine a Doppler Shift
+        let range = 10
+        let numPtsInArray = endIdx - startIdx
         var currentAverages: [Float] = [0.0, 0.0]
         vDSP_meanv(&normalizedFftArray + (numPts - range), vDSP_Stride(1), &(currentAverages[0]), vDSP_Length(range))
         vDSP_meanv(&normalizedFftArray + (numPts + 1), vDSP_Stride(1), &(currentAverages[1]), vDSP_Length(range))
-        
-        /// Do not track Doppler shifts if user has changed chosen sine wave frequency or volume recently
-        /// This prevents from sine wave frequency or volume changes registering as Doppler shifts
-        if vDSP.mean(self.lastTenFrequencies!) != self.frequencyModuleB {
-            /// Reset FFT baseline average 'lastTenFftAverages' for magnitudes and nosie when chosen sine wave frequency or volume changes
-            self.lastTenFftAverages = nil
-            self.coreThresholdValues = Array.init(repeating: 0.0, count: 10)
-            self.coreThresholddAverageNum = 0
-            self.currentRollingFftAverage = currentAverages
-            self.rollingFftIndex = 1
-            self.dopplerGesture = .unavailable
-        
-        /// Add to current rolling FFT average if there is no 10-point averaged FFT baseline for relative comparisons for Doppler shift determination
-        } else if self.lastTenFftAverages == nil {
-            self.currentRollingFftAverage = self.currentRollingFftAverage == nil ? currentAverages : vDSP.add(self.currentRollingFftAverage!, currentAverages)
-            self.rollingFftIndex += 1
-            self.dopplerGesture = .calibrating
-        
-        /// Compares current-baseline high frequency magnitudes against current-baseline low frequency magnitudes for 10 frames to learn "skewness" threshold
-        } else if self.coreThresholddAverageNum < 10 {
-            self.coreThresholdValues[self.coreThresholddAverageNum] = (currentAverages[1] / self.lastTenFftAverages![1]) / (currentAverages[0] / self.lastTenFftAverages![0])
-            self.coreThresholddAverageNum += 1
-            
-            /// Calculate mean and standard deviation of the 10 threshold values
-            if self.coreThresholddAverageNum == 10 {
-                
-                let count = self.coreThresholdValues.count
-                let n = vDSP_Length(count)
 
-                vDSP_meanv(&self.coreThresholdValues, 1, &self.coreThresholdMean, n)
-                
-                self.coreThresholdDeviation = vDSP.maximum(self.coreThresholdValues) - vDSP.minimum(self.coreThresholdValues)
+        /// Slightly delay Doppler Shift gesture recognition if frequency has changed
+        /// If frequency has changed, reset all baseline thresholds and historical fft averages of past frames
+        if self.isStabilizing {
+            self.stabilizationCounter += 1
+            if self.stabilizationCounter >= stabilizationThreshold {
+                // End of stabilization period; reset necessary variables
+                self.isStabilizing = false
+                self.lastTenFftAverages = nil
+                self.coreThresholdValues = []
+                self.coreThresholdMean = 0.0
+                self.coreThresholdDeviation = 0.0
+                self.currentRollingFftAverage = nil
+                self.rollingFftIndex = 0
+                self.isCalibrating = true
+                self.calibrationSampleCount = 0
+                self.dopplerGesture = .calibrating
             }
-            
-            self.dopplerGesture = .calibrating
-            
-        /// Compare current-baseline high frequency magnitude averages to current-baseline low frequency magnitude averages
-        /// Ratio of ratios may mitigate some of the effects of noise that both sides experience
-        } else {
-            let upperThreshold: Float = self.coreThresholdMean + self.coreThresholdDeviation
-            let lowerThreshold: Float = self.coreThresholdMean - self.coreThresholdDeviation
-            
-            let ratioOfRatios = (currentAverages[1] / self.lastTenFftAverages![1]) / (currentAverages[0] / self.lastTenFftAverages![0])
-            print("upper:", upperThreshold)
-            print("lower:", lowerThreshold)
-            print("RofR:", ratioOfRatios)
-            
-            if ratioOfRatios > upperThreshold {
-                self.dopplerGesture = .toward
-            } else if ratioOfRatios < lowerThreshold {
-                self.dopplerGesture = .away
-            } else {
-                self.dopplerGesture = .none
-            }
-            
-            if self.dopplerGesture == .none {
-                self.currentRollingFftAverage = self.currentRollingFftAverage == nil ? currentAverages : vDSP.add(self.currentRollingFftAverage!, currentAverages)
-                self.rollingFftIndex += 1
-            }
+            /// Skip further processing during stabilization
+            return
         }
         
-        /// Establish a new baseline for noise comparisons after 10 frames in current rolling average
-        if self.rollingFftIndex == 10 {
-            self.lastTenFftAverages = vDSP.divide(
-                Float(self.rollingFftIndex),
-                self.currentRollingFftAverage!
-            )
-            
-            self.currentRollingFftAverage = nil
-            self.rollingFftIndex = 0
-            
-            // Reset and recalculate coreThresholdValues
-            self.coreThresholdValues = Array.init(repeating: 0.0, count: 10)
-            self.coreThresholddAverageNum = 0
+        /// Accumulate FFT magnitudes to compute the baseline
+        if self.lastTenFftAverages == nil {
+            self.currentRollingFftAverage = self.currentRollingFftAverage == nil
+                ? currentAverages
+                : vDSP.add(self.currentRollingFftAverage!, currentAverages)
+            self.rollingFftIndex += 1
+
+            /// Compute the baseline averages after collecting enough data
+            if self.rollingFftIndex >= 30 {
+                self.lastTenFftAverages = vDSP.divide(
+                    Float(self.rollingFftIndex),
+                    self.currentRollingFftAverage!
+                )
+                self.currentRollingFftAverage = nil
+                self.rollingFftIndex = 0
+            }
+
+            /// Indicate calibration is in progress
+            self.dopplerGesture = .calibrating
+            return
+        }
+
+        // MARK: - Calibration Phase
+        
+        /// Collect samples of ratio of current-baseline high freq magnitude and current-baseline low freq magnitude ratios
+        /// Increases in current high frequency magnitudes or current low frequency magnitudes relative to these samples may suggest "towards", "away" Doppler shift motions
+        if self.isCalibrating {
+            let ratioOfRatios = (currentAverages[1] / self.lastTenFftAverages![1]) /
+                                (currentAverages[0] / self.lastTenFftAverages![0])
+
+            /// Add the new ratio to the coreThresholdValues
+            self.coreThresholdValues.append(ratioOfRatios)
+            self.calibrationSampleCount += 1
+
+            /// Calculate mean and standard deviation once enough samples are collected,
+            if self.calibrationSampleCount >= calibrationSampleThreshold {
+                self.coreThresholdMean = vDSP.mean(self.coreThresholdValues)
+                self.coreThresholdDeviation = vDSP.standardDeviation(self.coreThresholdValues)
+
+                /// Handle zero or small standard deviation by utilizing a fraction of the mean
+                let minDeviation = 0.05 * abs(self.coreThresholdMean) // Adjust as needed
+                if self.coreThresholdDeviation < minDeviation {
+                    self.coreThresholdDeviation = minDeviation
+                }
+
+                /// End calibration
+                self.isCalibrating = false
+                self.calibrationSampleCount = 0
+                self.dopplerGesture = .none // Ready to detect gestures
+            } else {
+                /// Continue collecting calibration data
+                self.dopplerGesture = .calibrating
+            }
+
+            /// Update the rolling FFT average for baseline adjustment
+            self.currentRollingFftAverage = self.currentRollingFftAverage == nil
+                ? currentAverages
+                : vDSP.add(self.currentRollingFftAverage!, currentAverages)
+            self.rollingFftIndex += 1
+
+            /// Update the baseline averages periodically
+            if self.rollingFftIndex >= 30 {
+                self.lastTenFftAverages = vDSP.divide(
+                    Float(self.rollingFftIndex),
+                    self.currentRollingFftAverage!
+                )
+                self.currentRollingFftAverage = nil
+                self.rollingFftIndex = 0
+            }
+
+            /// Skip gesture detection during calibration
+            return
+        }
+
+        // Calculate the ratio of ratios for current data
+        let ratioOfRatios = (currentAverages[1] / self.lastTenFftAverages![1]) /
+                            (currentAverages[0] / self.lastTenFftAverages![0])
+
+        // Calculate mean and standard deviation of the threshold sample values
+        self.coreThresholdMean = vDSP.mean(self.coreThresholdValues)
+        self.coreThresholdDeviation = vDSP.standardDeviation(self.coreThresholdValues)
+
+        /// Handle zero or small standard deviation
+        let minDeviation = 0.05 * abs(self.coreThresholdMean)
+        if self.coreThresholdDeviation < minDeviation {
+            self.coreThresholdDeviation = minDeviation
+        }
+
+        // Define upper and lower thresholds for gesture detection
+        let upperThreshold: Float = self.coreThresholdMean + 3 * self.coreThresholdDeviation
+        let lowerThreshold: Float = self.coreThresholdMean - 3 * self.coreThresholdDeviation
+
+        /// Detect gestures based on thresholds
+        if ratioOfRatios > upperThreshold {
+            self.dopplerGesture = .toward
+        } else if ratioOfRatios < lowerThreshold {
+            self.dopplerGesture = .away
+        } else {
+            self.dopplerGesture = .none
+        }
+
+        /// Only update thresholds and baseline when no gesture is detected
+        /// i.e., we want to recognize noise when there is no influence on the played audio
+        if self.dopplerGesture == .none {
+            /// Add the new ratio to the rolling threshold values
+            self.coreThresholdValues.append(ratioOfRatios)
+            if self.coreThresholdValues.count > thresholdWindowSize {
+                // Maintain the window size by removing the oldest value
+                self.coreThresholdValues.removeFirst()
+            }
+
+            /// Update the rolling FFT average
+            self.currentRollingFftAverage = self.currentRollingFftAverage == nil
+                ? currentAverages
+                : vDSP.add(self.currentRollingFftAverage!, currentAverages)
+            self.rollingFftIndex += 1
+
+            /// Update the baseline averages periodically
+            if self.rollingFftIndex >= 30 {
+                self.lastTenFftAverages = vDSP.divide(
+                    Float(self.rollingFftIndex),
+                    self.currentRollingFftAverage!
+                )
+                self.currentRollingFftAverage = nil
+                self.rollingFftIndex = 0
+            }
         }
     }
     
